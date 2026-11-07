@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}创建投票 - 投票系统{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h2 class="mb-4">✏️ 创建新投票</h2>
+        <form method="POST" enctype="multipart/form-data" id="createForm">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">基本信息</h5>
+                    <div class="mb-3">
+                        <label class="form-label">投票标题 <span class="text-danger">*</span></label>
+                        <input type="text" name="title" class="form-control" required placeholder="例如：本周团建吃什么？">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">投票描述（可选）</label>
+                        <textarea name="description" class="form-control" rows="2" placeholder="对本次投票的补充说明"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">截止时间（可选）</label>
+                        <input type="datetime-local" name="deadline" class="form-control">
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="card-title mb-0">投票选项</h5>
+                        <button type="button" class="btn btn-success btn-sm" onclick="addOption()">+ 添加选项</button>
+                    </div>
+                    <div id="optionsContainer"></div>
+                    <small class="text-muted">至少需要两个选项，每个选项可上传图片或填写图片URL</small>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-lg">✓ 创建投票</button>
+                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-lg">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let optionIndex = 0;
+function addOption() {
+    const container = document.getElementById('optionsContainer');
+    const div = document.createElement('div');
+    div.className = 'card mb-3 option-card border-success';
+    div.id = 'option-' + optionIndex;
+    div.innerHTML = `
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0 text-success">选项 ${optionIndex + 1}</h6>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeOption(${optionIndex})">🗑 删除</button>
+            </div>
+            <div class="mb-2">
+                <input type="text" name="option_text[]" class="form-control" placeholder="选项文字（必填，如：牛、羊、张三）" required>
+            </div>
+            <div class="mb-2">
+                <textarea name="option_desc[]" class="form-control" rows="1" placeholder="选项描述（可选）"></textarea>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label small text-muted">上传图片（可选）</label>
+                    <input type="file" name="option_file[]" class="form-control form-control-sm" accept="image/*">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small text-muted">或填写图片URL（可选）</label>
+                    <input type="url" name="option_url[]" class="form-control form-control-sm" placeholder="https://...">
+                </div>
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+    optionIndex++;
+}
+function removeOption(index) {
+    const div = document.getElementById('option-' + index);
+    if (div) div.remove();
+}
+addOption();
+addOption();
+document.getElementById('createForm').addEventListener('submit', function(e) {
+    const options = document.querySelectorAll('.option-card input[name="option_text[]"]');
+    let validCount = 0;
+    options.forEach(opt => {
+        if (opt.value.trim()) validCount++;
+    });
+    if (validCount < 2) {
+        e.preventDefault();
+        alert('至少需要两个有效的选项');
+    }
+});
+</script>
+{% endblock %}

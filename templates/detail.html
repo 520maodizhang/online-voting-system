@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}{{ poll.title }} - 投票系统{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="mb-4">
+            <h2>{{ poll.title }}</h2>
+            {% if poll.description %}
+            <p class="text-muted lead fs-6">{{ poll.description }}</p>
+            {% endif %}
+            <div class="d-flex flex-wrap gap-3 text-muted small">
+                <span>📅 创建于 {{ poll.created_at }}</span>
+                <span>🗳️ 总票数: {{ total_votes }}</span>
+                {% if poll.deadline %}
+                <span>⏰ 截止: {{ poll.deadline | format_deadline }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if is_expired %}
+        <div class="alert alert-warning">⚠️ 此投票已截止</div>
+        {% endif %}
+
+        {% if voted and not is_expired %}
+        <div class="alert alert-info">✅ 您已投过票，以下是当前结果</div>
+        {% endif %}
+
+        {% if not voted and not is_expired %}
+        <form method="POST" action="{{ url_for('vote', poll_id=poll.id) }}" id="voteForm">
+            <h4 class="mb-3">请选择一个选项：</h4>
+            <div class="row">
+                {% for stat in option_stats %}
+                <div class="col-md-6 mb-3">
+                    <label class="card option-label h-100">
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="option_id" value="{{ stat.option.id }}" id="opt-{{ stat.option.id }}" required>
+                                <label class="form-check-label fw-bold fs-5" for="opt-{{ stat.option.id }}">{{ stat.option.text }}</label>
+                            </div>
+                            {% if stat.option.description %}
+                            <p class="text-muted small mt-1 mb-0">{{ stat.option.description }}</p>
+                            {% endif %}
+                            {% if stat.option.image_url %}
+                            <img src="{{ stat.option.image_url }}" class="option-image mt-2" alt="{{ stat.option.text }}">
+                            {% endif %}
+                        </div>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg">🗳️ 提交投票</button>
+        </form>
+        <hr class="my-4">
+        {% endif %}
+
+        <h4 class="mb-3">📊 投票结果</h4>
+        {% if total_votes > 0 %}
+        <div class="results">
+            {% for stat in option_stats %}
+            <div class="mb-3 result-item">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-bold">{{ stat.option.text }}</span>
+                    <span class="text-muted">{{ stat.count }} 票 · {{ stat.percent }}%</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar {% if voted and voted.option_id == stat.option.id %}progress-bar-voted{% endif %}" role="progressbar" style="width: {{ stat.percent }}%;" aria-valuenow="{{ stat.percent }}" aria-valuemin="0" aria-valuemax="100">{{ stat.percent }}%</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">暂无投票数据，快来成为第一个投票的人吧！</p>
+        {% endif %}
+
+        <hr class="my-4">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">← 返回首页</a>
+    </div>
+</div>
+{% endblock %}
