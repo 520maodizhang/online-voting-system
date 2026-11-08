@@ -26,31 +26,37 @@
         {% endif %}
 
         {% if not voted and not is_expired %}
-        <form method="POST" action="{{ url_for('vote', poll_id=poll.id) }}" id="voteForm">
-            <h4 class="mb-3">请选择一个选项：</h4>
-            <div class="row">
-                {% for stat in option_stats %}
-                <div class="col-md-6 mb-3">
-                    <label class="card option-label h-100">
-                        <div class="card-body">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="option_id" value="{{ stat.option.id }}" id="opt-{{ stat.option.id }}" required>
-                                <label class="form-check-label fw-bold fs-5" for="opt-{{ stat.option.id }}">{{ stat.option.text }}</label>
+            {% if session.user_id %}
+            <form method="POST" action="{{ url_for('vote', poll_id=poll.id) }}" id="voteForm">
+                <h4 class="mb-3">请选择一个选项：</h4>
+                <div class="row">
+                    {% for stat in option_stats %}
+                    <div class="col-md-6 mb-3">
+                        <label class="card option-label h-100">
+                            <div class="card-body">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="option_id" value="{{ stat.option.id }}" id="opt-{{ stat.option.id }}" required>
+                                    <label class="form-check-label fw-bold fs-5" for="opt-{{ stat.option.id }}">{{ stat.option.text }}</label>
+                                </div>
+                                {% if stat.option.description %}
+                                <p class="text-muted small mt-1 mb-0">{{ stat.option.description }}</p>
+                                {% endif %}
+                                {% if stat.option.image_url %}
+                                <img src="{{ stat.option.image_url }}" class="option-image mt-2" alt="{{ stat.option.text }}">
+                                {% endif %}
                             </div>
-                            {% if stat.option.description %}
-                            <p class="text-muted small mt-1 mb-0">{{ stat.option.description }}</p>
-                            {% endif %}
-                            {% if stat.option.image_url %}
-                            <img src="{{ stat.option.image_url }}" class="option-image mt-2" alt="{{ stat.option.text }}">
-                            {% endif %}
-                        </div>
-                    </label>
+                        </label>
+                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
+                <button type="submit" class="btn btn-primary btn-lg">🗳️ 提交投票</button>
+            </form>
+            <hr class="my-4">
+            {% else %}
+            <div class="alert alert-info">
+                ℹ️ 请先<a href="{{ url_for('login') }}">登录</a>后参与投票
             </div>
-            <button type="submit" class="btn btn-primary btn-lg">🗳️ 提交投票</button>
-        </form>
-        <hr class="my-4">
+            {% endif %}
         {% endif %}
 
         <h4 class="mb-3">📊 投票结果</h4>

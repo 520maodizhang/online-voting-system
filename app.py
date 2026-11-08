@@ -1,8 +1,10 @@
 import os
 import sqlite3
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, g
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash, g, session
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = 'voting-system-secret-key-2024'
@@ -37,7 +39,9 @@ def init_db():
             title TEXT NOT NULL,
             description TEXT,
             deadline TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            creator_id INTEGER,
+            FOREIGN KEY (creator_id) REFERENCES users(id)
         )
     ''')
     db.execute('''
@@ -55,11 +59,21 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             poll_id INTEGER NOT NULL,
             option_id INTEGER NOT NULL,
-            ip_address TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
             voted_at TEXT NOT NULL,
-            UNIQUE(poll_id, ip_address),
+            UNIQUE(poll_id, user_id),
             FOREIGN KEY (poll_id) REFERENCES polls(id),
-            FOREIGN KEY (option_id) REFERENCES options(id)
+            FOREIGN KEY (option_id) REFERENCES options(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    # [NEW] users 表：存用户名和密码哈希
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
         )
     ''')
     db.commit()
@@ -80,6 +94,90 @@ def is_poll_expired(poll):
         return False
 
 
+# [NEW] 登录验证装饰器：没登录就跳转到登录页
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('请先登录', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return wrapper
+
+
+# [NEW] 获取当前登录用户
+def get_current_user():
+    if 'user_id' not in session:
+        return None
+    db = get_db()
+    return db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+
+# [NEW] 注册路由
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+
+        if not username or not password:
+            flash('用户名和密码不能为空', 'danger')
+            return redirect(url_for('register'))
+
+        if len(username) < 2:
+            flash('用户名至少2个字符', 'danger')
+            return redirect(url_for('register'))
+
+        if len(password) < 4:
+            flash('密码至少4个字符', 'danger')
+            return redirect(url_for('register'))
+
+        db = get_db()
+        existing = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+        if existing:
+            flash('用户名已存在，请换一个', 'danger')
+            return redirect(url_for('register'))
+
+        db.execute(
+            'INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)',
+            (username, generate_password_hash(password), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        )
+        db.commit()
+        flash('注册成功，请登录', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
+
+
+# [NEW] 登录路由
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['id']
+            flash('登录成功！', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('用户名或密码错误', 'danger')
+            return redirect(url_for('login'))
+
+    return render_template('login.html')
+
+
+# [NEW] 登出路由
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    flash('已退出登录', 'info')
+    return redirect(url_for('index'))
+
+
 @app.route('/')
 def index():
     db = get_db()
@@ -92,7 +190,9 @@ def index():
     return render_template('index.html', polls=polls, is_poll_expired=is_poll_expired)
 
 
+# [CHANGED] 创建投票需要登录
 @app.route('/create', methods=['GET', 'POST'])
+@login_required
 def create():
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
@@ -133,9 +233,10 @@ def create():
             return redirect(url_for('create'))
 
         db = get_db()
+        # [CHANGED] 存入创建者ID
         cursor = db.execute(
-            'INSERT INTO polls (title, description, deadline, created_at) VALUES (?, ?, ?, ?)',
-            (title, description, deadline, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            'INSERT INTO polls (title, description, deadline, created_at, creator_id) VALUES (?, ?, ?, ?, ?)',
+            (title, description, deadline, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), session['user_id'])
         )
         poll_id = cursor.lastrowid
         for text, desc, img_url in options:
@@ -172,11 +273,13 @@ def detail(poll_id):
     for stat in option_stats:
         stat['percent'] = round(stat['count'] / total_votes * 100, 1) if total_votes > 0 else 0
 
-    ip = request.remote_addr
-    voted = db.execute(
-        'SELECT option_id FROM votes WHERE poll_id = ? AND ip_address = ?',
-        (poll_id, ip)
-    ).fetchone()
+    # [CHANGED] 用 user_id 查是否已投票，而不是 IP
+    voted = None
+    if 'user_id' in session:
+        voted = db.execute(
+            'SELECT option_id FROM votes WHERE poll_id = ? AND user_id = ?',
+            (poll_id, session['user_id'])
+        ).fetchone()
 
     expired = is_poll_expired(poll)
 
@@ -186,7 +289,9 @@ def detail(poll_id):
     )
 
 
+# [CHANGED] 投票需要登录，用 user_id 去重
 @app.route('/vote/<int:poll_id>', methods=['POST'])
+@login_required
 def vote(poll_id):
     db = get_db()
     poll = db.execute('SELECT * FROM polls WHERE id = ?', (poll_id,)).fetchone()
@@ -198,10 +303,10 @@ def vote(poll_id):
         flash('投票已截止', 'warning')
         return redirect(url_for('detail', poll_id=poll_id))
 
-    ip = request.remote_addr
+    # [CHANGED] 用 user_id 检查是否已投票
     existing = db.execute(
-        'SELECT * FROM votes WHERE poll_id = ? AND ip_address = ?',
-        (poll_id, ip)
+        'SELECT * FROM votes WHERE poll_id = ? AND user_id = ?',
+        (poll_id, session['user_id'])
     ).fetchone()
     if existing:
         flash('您已经投过票了', 'warning')
@@ -220,9 +325,10 @@ def vote(poll_id):
         flash('无效的选项', 'danger')
         return redirect(url_for('detail', poll_id=poll_id))
 
+    # [CHANGED] 存入 user_id 而不是 IP
     db.execute(
-        'INSERT INTO votes (poll_id, option_id, ip_address, voted_at) VALUES (?, ?, ?, ?)',
-        (poll_id, option_id, ip, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        'INSERT INTO votes (poll_id, option_id, user_id, voted_at) VALUES (?, ?, ?, ?)',
+        (poll_id, option_id, session['user_id'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     )
     db.commit()
     flash('投票成功！', 'success')
